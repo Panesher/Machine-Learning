@@ -192,7 +192,8 @@ class BaseDescentReg(BaseDescent):
         """
         Calculate gradient of loss function and L2 regularization with respect to weights
         """
-        l2_gradient: np.ndarray = np.zeros_like(x.shape[1])  # TODO: replace with L2 gradient calculation
+        l2_gradient = self.w.copy()
+        l2_gradient[-1] = 0
 
         return super().calc_gradient(x, y) + l2_gradient * self.mu
 
