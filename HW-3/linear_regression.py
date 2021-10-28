@@ -33,13 +33,13 @@ class LinearRegression:
         :param y: targets array
         :return: self
         """
+        self.descent.w[-1] = y.mean()
         self.loss_history += [self.calc_loss(x, y)]
         for iter in range(1, self.max_iter + 1):
             diff = self.descent.update_weights(self.descent.calc_gradient(x, y))
             self.loss_history += [self.calc_loss(x, y)]
             if np.isnan(diff).any() or diff.dot(diff) < self.tolerance:
                 break
-        assert False, f'funny bunny {len(self.loss_history), max_iter, diff.dot(diff), self.tolerance}'
 
     def predict(self, x: np.ndarray) -> np.ndarray:
         """
