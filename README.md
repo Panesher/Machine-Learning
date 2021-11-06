@@ -1,3 +1,3 @@
 # Machine-Learning
-<br>Machine learning homeworks (HW-_)
-<br>Deep learing homeworks (DL-_)
+<br>Machine learning homeworks (HW)
+<br>Deep learing homeworks (DL)
