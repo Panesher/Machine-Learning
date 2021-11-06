@@ -1,10 +1,10 @@
-Machine-Learning
+Machine Learning
 ---
 Repository contains:
-<br>Machine learning homeworks (HW)
-<br>Deep learing homeworks (DL)
+- Machine learning homeworks (HW)
+- Deep learing homeworks (DL)
 
-All descripsion in Jupiter Notebook (only Russian language)
+All descripsion in Jupiter Notebook (only Russian language).
 
 Technologies used:
 - pytorch
@@ -12,4 +12,5 @@ Technologies used:
 - pandas
 - numpy
 
-[course repository](https://github.com/esokolov/ml-course-hse)
+[Machine learning course repository.](https://github.com/esokolov/ml-course-hse)
+<br>[Deep learning course repository.](https://github.com/isadrtdinov/intro-to-dl-hse)
