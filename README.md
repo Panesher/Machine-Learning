@@ -1,8 +1,8 @@
 Machine Learning
 ---
 Repository contains:
-- Machine learning homeworks (HW)
-- Deep learing homeworks (DL)
+- Machine learning homework (HW)
+- Deep learing homework (DL)
 
 All descripsion in Jupiter Notebook (only Russian language).
 
