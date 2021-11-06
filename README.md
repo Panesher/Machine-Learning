@@ -1,2 +1,3 @@
 # Machine-Learning
-Some files for machine learning homeworks
+<br>Machine learning homeworks (HW-_)
+<br>Deep learing homeworks (DL-_)
