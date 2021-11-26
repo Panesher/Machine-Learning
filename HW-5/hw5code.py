@@ -72,11 +72,37 @@ class DecisionTree(BaseEstimator, ClassifierMixin):
             out[key] = value
         return out
     
+    def _is_threshold_correct_by_leaf(self, x, threshold):
+        if self._min_samples_split is None:
+            return True
+        
+        if x[x > threshold].shape[0] > self._min_samples_split and x[x < threshold].shape[0] > self._min_samples_split:
+            return True
+        
+        return False
+    
+    def _find_correct_split_leaf(self, x, thresholds, ginis, threshold, gini):
+        if self._is_threshold_correct_by_leaf(x, threshold):
+            return threshold, gini
+
+        best_gini = -np.inf
+        best_threshold = None
+
+        for threshold, gini in zip(thresholds, ginis):
+            if gini > best_gini and self._is_threshold_correct_by_leaf(x, threshold):
+                best_gini = gini
+                best_threshold = threshold
+
+        return best_threshold, best_gini
+    
     def _check_stop_condition(self, depth, samples):
         if self._max_depth is not None and depth >= self._max_depth:
             return True
         if self._min_samples_split is not None and samples < self._min_samples_split:
             return True
+        if self._min_samples_split is not None and samples // 2 < self._min_samples_leaf:
+            return True
+        
         return False
 
     def _fit_node(self, sub_X, sub_y, node, depth=0):
@@ -117,8 +143,13 @@ class DecisionTree(BaseEstimator, ClassifierMixin):
             if np.unique(feature_vector).shape[0] < 2:
                 continue
 
-            # TODO: make for min_samples_leaf
-            _, _, threshold, gini = find_best_split(feature_vector, sub_y)
+            thresholds, ginis, threshold, gini = find_best_split(feature_vector, sub_y)
+            threshold, gini = self._find_correct_split_leaf(feature_vector, thresholds, ginis, threshold, gini)
+            if threshold is None:
+                node["type"] = "terminal"
+                node["class"] = Counter(sub_y).most_common(1)[0][0]
+                return
+            
             if gini_best is None or gini > gini_best:
                 feature_best = feature
                 gini_best = gini
