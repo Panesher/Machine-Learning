@@ -140,4 +140,9 @@ class Boosting:
 
     @property
     def feature_importances_(self):
-        pass
+        res = np.zeros(self.models[0].feature_importances_.shape)
+        for model, gamma in zip(self.models, self.gammas):
+            res += model.feature_importances_ * gamma
+        res = res / res.sum()
+        return res
+
