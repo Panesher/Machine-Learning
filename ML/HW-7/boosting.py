@@ -134,6 +134,10 @@ class Boosting:
         return self.sigmoid(predictions)
 
 
+    def predict(self, x):
+        return self.predict_proba(x)[:, 1]
+
+
     def score(self, x, y):
         return score(self, x, y)
 
