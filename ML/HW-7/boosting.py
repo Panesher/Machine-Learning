@@ -129,9 +129,10 @@ class Boosting:
         predictions = np.zeros((x.shape[0], 2))
         for gamma, model in zip(self.gammas, self.models):
             predictions[:, 1] += gamma * model.predict(x)
-        
+
+        predictions = self.sigmoid(predictions)
         predictions[:, 0] = 1 - predictions[:, 1]
-        return self.sigmoid(predictions)
+        return predictions
 
 
     def predict(self, x):
