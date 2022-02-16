@@ -6,6 +6,7 @@ Repository contains:
 
 All descripsion in Jupiter Notebook (only Russian language).
 
+
 Technologies used:
 - pytorch
 - sklearn
