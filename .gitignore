@@ -9,3 +9,4 @@ hse22-opt-course
 *.npz
 *.npy
 *__pycache__*
+*.ipynb_checkpoints*
