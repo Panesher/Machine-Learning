@@ -1,0 +1,11 @@
+intro-to-dl-hse
+ml-course-hse
+hse22-opt-course
+
+*/.*
+*.csv
+*.zip
+*data*
+*.npz
+*.npy
+*__pycache__*
