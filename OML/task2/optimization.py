@@ -9,7 +9,7 @@ import scipy.optimize
 from torch import threshold
 
 from utils import get_line_search_tool
-
+from oracles import BaseSmoothOracle
 
 def _log_if_needed(should_display : bool, *args, **kwargs):
     if should_display:
@@ -340,6 +340,90 @@ def hessian_free_newton(oracle, x_0, tolerance=1e-4, max_iter=500,
         _fill_history_if_needed(history, func, grad_norm, x, start_time)
 
         x = x + alpha * d
+
+    _fill_history_if_needed(history, oracle.func(x), np.linalg.norm(oracle.grad(x)), x, start_time)
+
+    return do_check_result(oracle, x, tolerance, grad_norm_0, history, display)
+
+
+def gradient_descent(oracle: BaseSmoothOracle, x_0, tolerance=1e-5, max_iter=10000,
+                     line_search_options=None, trace=False, display=False):
+    """
+    Gradien descent optimization method.
+
+    Parameters
+    ----------
+    oracle : BaseSmoothOracle-descendant object
+        Oracle with .func(), .grad() and .hess() methods implemented for computing
+        function value, its gradient and Hessian respectively.
+    x_0 : np.array
+        Starting point for optimization algorithm
+    tolerance : float
+        Epsilon value for stopping criterion.
+    max_iter : int
+        Maximum number of iterations.
+    line_search_options : dict, LineSearchTool or None
+        Dictionary with line search options. See LineSearchTool class for details.
+    trace : bool
+        If True, the progress information is appended into history dictionary during training.
+        Otherwise None is returned instead of history.
+    display : bool
+        If True, debug information is displayed during optimization.
+        Printing format and is up to a student and is not checked in any way.
+
+    Returns
+    -------
+    x_star : np.array
+        The point found by the optimization procedure
+    message : string
+        "success" or the description of error:
+            - 'iterations_exceeded': if after max_iter iterations of the method x_k still doesn't satisfy
+                the stopping criterion.
+            - 'computational_error': in case of getting Infinity or None value during the computations.
+    history : dictionary of lists or None
+        Dictionary containing the progress information or None if trace=False.
+        Dictionary has to be organized as follows:
+            - history['time'] : list of floats, containing time in seconds passed from the start of the method
+            - history['func'] : list of function values f(x_k) on every step of the algorithm
+            - history['grad_norm'] : list of values Euclidian norms ||g(x_k)|| of the gradient on every step of the algorithm
+            - history['x'] : list of np.arrays, containing the trajectory of the algorithm. ONLY STORE IF x.size <= 2
+
+    Example:
+    --------
+    >> oracle = QuadraticOracle(np.eye(5), np.arange(5))
+    >> x_opt, message, history = gradient_descent(oracle, np.zeros(5), line_search_options={'method': 'Armijo', 'c1': 1e-4})
+    >> print('Found optimal point: {}'.format(x_opt))
+       Found optimal point: [ 0.  1.  2.  3.  4.]
+    """
+    if tolerance <= 0.:
+        tolerance = 1e-32
+
+    history = defaultdict(list) if trace else None
+    line_search_tool = get_line_search_tool(line_search_options)
+    x = np.copy(x_0)
+    start_time = time()
+    grad_norm_0 = np.linalg.norm(oracle.grad(x))
+
+    _log_if_needed(display, 'Starting with x =', x)
+
+    for _ in range(max_iter):
+        func = oracle.func(x)
+        grad = -oracle.grad(x)
+        grad_norm = np.linalg.norm(grad)
+
+        # Case gradient is low
+        if grad_norm ** 2 <= tolerance * (grad_norm_0 ** 2):
+            _log_if_needed(display, 'Gradient descent done, x =', x, 'f(x) =', func)
+            _fill_history_if_needed(history, func, grad_norm, x, start_time)
+            return x, 'success', history
+            # could be saddle point, and we can try to use solve_saddle implemented above
+
+        alpha = line_search_tool.line_search(oracle, x, grad)
+        if alpha is None:
+            return x, 'computational_error', history
+        _fill_history_if_needed(history, func, grad_norm, x, start_time)
+
+        x = x + alpha * grad
 
     _fill_history_if_needed(history, oracle.func(x), np.linalg.norm(oracle.grad(x)), x, start_time)
 
