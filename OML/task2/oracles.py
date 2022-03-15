@@ -108,7 +108,7 @@ class LogRegL2Oracle(BaseSmoothOracle):
 
     def hess_vec(self, x, v):
         expit_ = expit(self.b * self.matvec_Ax(x))
-        return self.matvec_ATx( np.diag(expit_ * (1 - expit_)) @ self.matvec_Ax(v) )\
+        return self.matvec_ATx( expit_ * (1 - expit_) * self.matvec_Ax(v) )\
             / self.b.shape[0] + self.regcoef * v
 
 
