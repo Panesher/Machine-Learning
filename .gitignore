@@ -10,3 +10,4 @@ hse22-opt-course
 *.npy
 *__pycache__*
 *.ipynb_checkpoints*
+*.xlsx
