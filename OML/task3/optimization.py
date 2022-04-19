@@ -46,7 +46,7 @@ def _fill_history_if_needed_duality(history, func, duality_gap, x, start_time):
 
 def do_check_result(oracle, x, tolerance, grad_norm_0, history=None, display=False):
     if np.linalg.norm(oracle.grad(x)) ** 2 >= tolerance * (grad_norm_0 ** 2):
-        _log_if_needed(display, 'lbfgs couldnt satisfy tolerance after_max_iter',
+        _log_if_needed(display, 'Method couldnt satisfy tolerance after_max_iter',
                        'iterations. Cause: gradient greater then tolerance after loop')
         return x, 'iterations_exceeded', history
 
@@ -164,7 +164,7 @@ def lbfgs(oracle: BarrierOracle, x_0, tolerance=1e-4, max_iter=500, memory_size=
     return do_check_result(oracle, x, tolerance, grad_norm_0, history, display)
 
 
-def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
+def newton(oracle : BarrierOracle, x_0, tolerance=1e-5, max_iter=100,
            line_search_options=None, trace=False, display=False):
     """
     Newton's optimization method.
@@ -246,7 +246,7 @@ def newton(oracle, x_0, tolerance=1e-5, max_iter=100,
             return x, 'computational_error', history
 
         if grad_norm ** 2 <= tolerance * (grad_norm_0 ** 2):
-            _log_if_needed(display, 'Gradient descent done, x =',
+            _log_if_needed(display, 'Newton descent done, x =',
                            x, 'f(x) =', func)
             _fill_history_if_needed(history, func, grad_norm, x, start_time)
             return x, 'success', history
@@ -281,7 +281,7 @@ def barrier_method_lasso(A, b, reg_coef, x_0, u_0, tolerance=1e-5,
                          tolerance_inner=1e-8, max_iter=100,
                          max_iter_inner=20, t_0=1, gamma=10,
                          c1=1e-4, lasso_duality_gap=None,
-                         trace=False, display=False, method=newton):
+                         trace=False, display=False, method=newton, method_kwargs={}):
     """
     Log-barrier method for solving the problem:
         minimize    f(x, u) := 1/2 * ||Ax - b||_2^2 + reg_coef * \sum_i u_i
@@ -377,7 +377,7 @@ def barrier_method_lasso(A, b, reg_coef, x_0, u_0, tolerance=1e-5,
 
     for _ in range(max_iter):
         x_, msg, _ = method(oracle, np.append(x, u), tolerance_inner, max_iter_inner,
-                            line_search_options=line_search_options, display=display)
+                            line_search_options=line_search_options, display=display, **method_kwargs)
         if msg != 'success':
             return (None, None), msg, history
 

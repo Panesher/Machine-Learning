@@ -44,17 +44,17 @@ class BaseSmoothOracle(object):
 
 
 class BarrierOracle(BaseSmoothOracle):
-    def __init__(self, A, b, lamda, t, eps=1e-10):
+    def __init__(self, A, b, lamda, t, closest_point=0.99):
         self.A = A
         self.b = b
         self.t = t
         self.lamda = lamda
-        self.eps = eps
+        self.closest_point = closest_point
         try:
-            self.n = b.shape[0]
+            self.n = A.shape[1]
         except:
             try:
-                self.n = len(b.shape)
+                self.n = len(b)
             except:
                 raise ValueError(
                     f'Barrier oracle cant innitialize due incorrect type of b: {type(b)}')
@@ -90,24 +90,17 @@ class BarrierOracle(BaseSmoothOracle):
         upx = 1 / ((u + x) ** 2)
         hess_u = np.diag(umx + upx)
         hess_x = self.t * np.transpose(self.A) @ self.A + hess_u
-        hess_xu = np.transpose(np.diag(upx - umx))
+        hess_xu = np.diag(upx - umx)
         return np.concatenate((np.concatenate((hess_x, hess_xu), axis=1),
                                np.concatenate((hess_xu, hess_u), axis=1)), axis=0)
 
     def get_alpha_max(self, x_, d_):
         x, u = self.devide_vec(x_)
         dx, du = self.devide_vec(d_)
-        alpha_max = 2.
-        I_m = np.where(-dx - du > 0)
-        if I_m[0].shape[0] > 0:
-            alpha_max = np.min(
-                [alpha_max, np.min((x[I_m] + u[I_m]) / (-dx[I_m] - du[I_m]))])
-        I_p = np.where(dx - du > 0)
-        if I_p[0].shape[0] > 0:
-            alpha_max = np.min(
-                [alpha_max, np.min((-x[I_p] + u[I_p]) / (dx[I_p] - du[I_p]))])
-        alpha_max -= self.eps
-        return alpha_max
+        return self.closest_point * np.min([
+            np.min((x + u) / (-dx - du), where=(-dx - du > 0), initial=2.),
+            np.min((-x + u) / (dx - du), where=(dx - du > 0), initial=2.)
+        ])
 
 
 def lasso_duality_gap(x, Ax_b, ATAx_b, b, regcoef):
