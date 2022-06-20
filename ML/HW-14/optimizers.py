@@ -2,10 +2,10 @@ from importlib_metadata import distribution
 import numpy as np
 from abc import ABC, abstractmethod
 from typing import Any, Callable, Dict, Union, Optional
-import sklearn
 from sklearn.base import BaseEstimator
 from sklearn.model_selection import cross_validate, KFold, StratifiedKFold
-from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process import GaussianProcessRegressor, kernels
+from sklearn.neighbors import KernelDensity, NearestNeighbors
 from distributions import BaseDistribution, NumericalDistribution
 from scipy.stats import norm
 
@@ -56,7 +56,7 @@ class BaseOptimizer(BaseEstimator, ABC):
         self.best_params = None
         self.best_estimator = None
         self.params_history = {
-            name: np.ndarray([]) for name in self.param_distributions
+            name: np.array([]) for name in self.param_distributions
         }
         self.scores_history = np.array([])
 
@@ -101,8 +101,17 @@ class BaseOptimizer(BaseEstimator, ABC):
         Returns:
           - score: mean cross-validation score
         '''
+        if 'random_state' in self.estimator.get_params().keys():
+            return np.mean(cross_validate(
+                self.estimator.set_params(
+                    **params, random_state=self.random_state),
+                X, y, cv=self.splitter, scoring=self.scoring,
+                verbose=self.verbose, n_jobs=self.n_jobs
+            )['test_score'])
         return np.mean(cross_validate(
-            self.estimator.set_params(**params), X, y, cv=self.splitter, scoring=self.scoring, verbose=self.verbose
+            self.estimator.set_params(**params), X, y, cv=self.splitter,
+            scoring=self.scoring, verbose=self.verbose,
+            n_jobs=self.n_jobs
         )['test_score'])
 
     def fit(self, X_train: np.ndarray, y_train: Optional[np.ndarray] = None) -> BaseEstimator:
@@ -116,7 +125,6 @@ class BaseOptimizer(BaseEstimator, ABC):
         Returns:
           - self: (sklearn standard convention)
         '''
-        np.random.seed(self.random_state)
         self.reset()
         if y_train is not None and np.issubdtype(y_train.dtype, np.integer):
             self.splitter = StratifiedKFold(n_splits=self.cv, shuffle=True,
@@ -125,19 +133,25 @@ class BaseOptimizer(BaseEstimator, ABC):
             self.splitter = KFold(n_splits=self.cv, shuffle=True,
                                   random_state=self.random_state)
 
+        np.random.seed(self.random_state)
         for _ in range(self.num_runs):
-            for _ in range(self.num_samples_per_run):
-                run_params = self.select_params(
-                    self.params_history, self.scores_history, self.sample_params())
-                score = self.cross_validate(X_train, y_train, run_params)
-                self.params_history += run_params
-                self.scores_history += score
-                if self.best_score < score:
-                    self.best_score = score
-                    self.best_params = run_params
+            run_params = self.select_params(
+                self.params_history, self.scores_history, self.sample_params())
+
+            score = self.cross_validate(X_train, y_train, run_params)
+
+            for name in self.params_history:
+                self.params_history[name] = np.append(
+                    self.params_history[name], run_params[name])
+            self.scores_history = np.append(self.scores_history, score)
+
+            if self.best_score is None or self.best_score < score:
+                self.best_score = score
+                self.best_params = run_params
 
         self.best_estimator = self.estimator.set_params(**self.best_params)
         self.best_estimator.fit(X_train, y_train)
+
         return self
 
     def predict(self, X_test: np.ndarray) -> np.ndarray:
@@ -151,6 +165,7 @@ class BaseOptimizer(BaseEstimator, ABC):
         if self.best_estimator is None:
             raise ValueError('Optimizer not fitted yet')
 
+        np.random.seed(self.random_state)
         return self.best_estimator.predict(X_test)
 
     def predict_proba(self, X_test: np.ndarray) -> np.ndarray:
@@ -167,6 +182,7 @@ class BaseOptimizer(BaseEstimator, ABC):
         if not hasattr(self.best_estimator, 'predict_proba'):
             raise ValueError('Estimator does not support predict_proba')
 
+        np.random.seed(self.random_state)
         return self.best_estimator.predict_proba(X_test)
 
 
@@ -222,86 +238,68 @@ class GPOptimizer(BaseOptimizer):
         for key in params:
             distr = self.param_distributions[key]
             if hasattr(distr, 'scale'):
-                value = params[key]
-                res += [distr.scale(value)]
+                res += [distr.scale(params[key])]
                 cnt += 1
 
         return np.transpose(res), cnt
 
-    def get_categorical_mu_sigma(self, params_history: Dict[str, np.ndarray],
-                                 scores_history: np.ndarray,
-                                 sampled_params: Dict[str, np.ndarray]) -> tuple:
-        res_mus = []
-        res_sigmas = []
+    def get_categorical_params(self, params_history: Dict[str, np.ndarray],
+                               scores_history: np.ndarray) -> dict:
+        new_params = {}
         y_star = np.max(scores_history)
         for key in params_history:
             distr = self.param_distributions[key]
             if hasattr(distr, 'scale'):
                 continue
 
-            mus = []
-            sigmas = []
             cat_map = {
-                'mu': {},
-                'sigma': {},
+                'mu': [],
+                'sigma': [],
             }
-
-            param_sampled = sampled_params[key]
             param_history = params_history[key]
-            set_cat = set(param_sampled) | set(param_history)
-
-            for cat in set_cat:
+            for cat in distr.categories:
                 scores_cat_hist = scores_history[param_history == cat]
                 if len(scores_cat_hist) == 0:
-                    cat_map['mu'][cat] = y_star
-                    cat_map['sigma'][cat] = 1.
+                    cat_map['mu'] += [y_star]
+                    cat_map['sigma'] += [1.]
                 else:
-                    cat_map['mu'][cat] = scores_cat_hist.mean()
-                    cat_map['sigma'][cat] = (
-                        1. + ((scores_cat_hist - cat_map['mu'][cat]) ** 2).sum()
-                    ) / (1. + len(scores_cat_hist))
+                    cat_map['mu'] += [scores_cat_hist.mean()]
+                    cat_map['sigma'] += [(
+                        1. + ((scores_cat_hist - cat_map['mu'][-1]) ** 2).sum()
+                    ) / (1. + len(scores_cat_hist))]
 
-            for cat in sampled_params[key]:
-                mus += [cat_map['mu'][cat]]
-                sigmas += [cat_map['sigma'][cat]]
+            new_params[key] = distr.categories[
+                np.argmax(self.calculate_expected_improvement(
+                    y_star, cat_map['mu'], np.sqrt(cat_map['sigma'])))
+            ]
 
-            res_mus += [mus]
-            res_sigmas += [sigmas]
-
-        return np.array(res_mus).mean(axis=0), np.array(res_sigmas).mean(axis=0)
-
-    def get_best_pos(self, params_history: Dict[str, np.ndarray], scores_history: np.ndarray,
-                     sampled_params: Dict[str, np.ndarray]) -> int:
-        if len(scores_history) < self.num_dry_runs:
-            return np.random.randint(self.num_samples_per_run)
-
-        transormed_params, cnt_num = self.transform_params(params_history)
-        if cnt_num > 0:
-            gpr = GaussianProcessRegressor()
-            gpr.fit(transormed_params, scores_history)
-            mu, sigma = gpr.predict(self.transform_params(
-                sampled_params)[0], return_std=True)
-
-        y_star = np.max(scores_history)
-
-        mu_cat, sigma_cat = self.get_categorical_mu_sigma(
-            params_history, scores_history, sampled_params)
-        if mu_cat.shape[0] > 0:
-            if mu is None:
-                mu = mu_cat
-                sigma = sigma_cat
-            else:
-                mu = (mu * cnt_num + mu_cat * (len(params_history) - cnt_num)) / len(params_history)
-                sigma = (sigma * cnt_num + sigma_cat * (len(params_history) - cnt_num)) / len(params_history)
-
-        return np.argmax(self.calculate_expected_improvement(y_star, mu, sigma))
+        return new_params
 
     def select_params(self, params_history: Dict[str, np.ndarray], scores_history: np.ndarray,
                       sampled_params: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        new_params = {}
-        pos = self.get_best_pos(params_history, scores_history, sampled_params)
-        for name, param_list in sampled_params.items():
-            new_params[name] = param_list[pos]
+        if len(scores_history) < self.num_dry_runs:
+            new_params = {}
+            for name in sampled_params:
+                new_params[name] = sampled_params[name][0]
+            return new_params
+
+        new_params = self.get_categorical_params(
+            params_history, scores_history)
+
+        transormed_params, cnt_num = self.transform_params(params_history)
+        y_star = np.max(scores_history)
+        if cnt_num > 0:
+            gpr = GaussianProcessRegressor(
+                kernel=kernels.ConstantKernel() + kernels.WhiteKernel() + kernels.RBF())
+            gpr.fit(transormed_params, scores_history)
+            mu, sigma = gpr.predict(self.transform_params(
+                sampled_params)[0], return_std=True)
+            pos = np.argmax(
+                self.calculate_expected_improvement(y_star, mu, sigma))
+            for name, param_list in sampled_params.items():
+                if not hasattr(self.param_distributions[name], 'scale'):
+                    continue
+                new_params[name] = param_list[pos]
 
         return new_params
 
@@ -341,12 +339,79 @@ class TPEOptimizer(BaseOptimizer):
         Returns:
           - log_density: array of estimated log probabilities of size (num_samples_per_run, )
         '''
-        log_density = np.zeros(self.num_samples_per_run)
-        # Your code here (⊃｡•́‿•̀｡)⊃
-        return log_density
+        if scaled_params_history.shape[0] == 0:
+            return np.random.rand(scaled_sampled_params.shape) + 0.1
+        return KernelDensity(bandwidth=bandwidth).fit(scaled_params_history).score_samples(scaled_sampled_params)
+
+    def transform_params(self, params: Dict[str, np.ndarray]) -> tuple:
+        res = []
+        cnt = 0
+        for key in params:
+            distr = self.param_distributions[key]
+            if hasattr(distr, 'scale'):
+                res += [distr.scale(params[key])]
+                cnt += 1
+
+        return np.transpose(res), cnt
+
+    def get_categorical_params(self, params_history: Dict[str, np.ndarray],
+                               scores_history: np.ndarray) -> dict:
+        new_params = {}
+        quantile = np.quantile(scores_history, self.gamma) 
+        ng = len(scores_history[scores_history >= quantile])
+        nl = len(scores_history) - ng
+        for key in params_history:
+            distr = self.param_distributions[key]
+            if hasattr(distr, 'scale'):
+                continue
+
+            pg = []
+            pl = []
+            param_history = params_history[key]
+            for cat in distr.categories:
+                scores = scores_history[param_history == cat]
+                pg += [ng / len(distr.categories) + len(scores[scores >= quantile])]
+                pl += [nl / len(distr.categories) + len(scores[scores < quantile])]
+
+            pg = np.array(pg)
+            pl = np.array(pl)
+            if pg.sum() == 0 or pl.sum() == 0:
+                new_params[key] = distr.categories[0]
+            else:
+                new_params[key] = distr.categories[
+                    np.argmax((pg * pl.sum()) / (pl * pg.sum()))
+                ]
+
+        return new_params
 
     def select_params(self, params_history: Dict[str, np.ndarray], scores_history: np.ndarray,
                       sampled_params: Dict[str, np.ndarray]) -> Dict[str, Any]:
-        new_params = {}
-        # Your code here (⊃｡•́‿•̀｡)⊃
+        if len(scores_history) < self.num_dry_runs:
+            new_params = {}
+            for name in sampled_params:
+                new_params[name] = sampled_params[name][0]
+            return new_params
+
+        new_params = self.get_categorical_params(
+            params_history, scores_history)
+
+        transormed_params, cnt_num = self.transform_params(params_history)
+        if cnt_num > 0:
+            transormed_sample_params = self.transform_params(sampled_params)[0]
+            bandwidth = np.median(NearestNeighbors(n_neighbors=2)
+                .fit(transormed_params)
+                .kneighbors(transormed_params)[0][:, 1])
+            quantile = np.quantile(scores_history, self.gamma)
+
+            log_pg = self.estimate_log_density(
+                transormed_params[scores_history >= quantile], transormed_sample_params, bandwidth)
+            log_pl = self.estimate_log_density(
+                transormed_params[scores_history < quantile], transormed_sample_params, bandwidth)
+
+            pos = np.argmax(log_pg - log_pl)
+            for name, param_list in sampled_params.items():
+                if not hasattr(self.param_distributions[name], 'scale'):
+                    continue
+                new_params[name] = param_list[pos]
+
         return new_params

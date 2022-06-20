@@ -11,3 +11,4 @@ hse22-opt-course
 *__pycache__*
 *.ipynb_checkpoints*
 *.xlsx
+catboost_info
