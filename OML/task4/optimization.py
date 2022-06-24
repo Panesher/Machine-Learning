@@ -108,22 +108,27 @@ def subgradient_method(oracle, x_0, tolerance=1e-2, max_iter=1000, alpha_0=1.,
         _log_if_needed(display, *args, **kwargs)
 
     log('Starting with x =', x)
+    x_min = x
+    func_min = oracle.func(x)
 
     for i in range(max_iter):
         func = oracle.func(x)
         grad = -oracle.subgrad(x)
         grad_norm = np.linalg.norm(grad)
+        if func < func_min:
+            x_min = x
+            func_min = func
 
         if _check_duality(oracle, x, tolerance):
             log('Gradient descent done, x =', x, 'f(x) =', func)
             _fill_history_if_needed(
                 history, func, oracle, x, start_time)
-            return x, 'success', history
+            return x_min, 'success', history
 
         _fill_history_if_needed(history, func, oracle, x, start_time)
         x = x + (alpha_0 / (np.sqrt(i + 1) * grad_norm)) * grad
 
-    return _do_check_result(oracle, x, tolerance, start_time, history, display)
+    return _do_check_result(oracle, x_min, tolerance, start_time, history, display)
 
 
 def proximal_gradient_method(oracle, x_0, L_0=1.0, tolerance=1e-5,
@@ -193,8 +198,8 @@ def proximal_gradient_method(oracle, x_0, L_0=1.0, tolerance=1e-5,
 
         while True:
             y = oracle.prox(x - oracle.grad(x) / l, 1 / l)
-            if oracle.func(y) <= (func + oracle.grad(x) @ (y - x)
-                                  + l / 2 * (np.linalg.norm(y - x) ** 2)):
+            if oracle._f.func(y) <= (oracle._f.func(x) + oracle.grad(x) @ (y - x)
+                                     + l / 2 * (np.linalg.norm(y - x) ** 2)):
                 x = y
                 break
             line_iter = line_iter + 1 if is_storing_iter else None
